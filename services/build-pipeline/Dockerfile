@@ -2,11 +2,16 @@ FROM golang:1.22-bookworm AS builder
 
 WORKDIR /workspace
 
+# Workspace descriptor
 COPY go.work go.work.sum ./
+
+# Shared library
 COPY libs/ libs/
+
+# Target service
 COPY services/build-pipeline/ services/build-pipeline/
 
-# Stub out other service directories so go.work doesn't fail
+# Stub go.mod/go.sum for remaining workspace members
 COPY services/submission-engine/go.mod services/submission-engine/go.mod
 COPY services/submission-engine/go.sum services/submission-engine/go.sum
 COPY services/sandbox-controller/go.mod services/sandbox-controller/go.mod
@@ -31,5 +36,4 @@ COPY --from=builder /build-pipeline /usr/local/bin/build-pipeline
 
 RUN useradd -u 1001 -m appuser
 USER appuser
-
 ENTRYPOINT ["build-pipeline"]

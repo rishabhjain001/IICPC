@@ -7,8 +7,6 @@ require (
 	github.com/jackc/pgx/v5 v5.5.5
 	github.com/redis/go-redis/v9 v9.5.1
 	go.uber.org/zap v1.27.0
-	google.golang.org/grpc v1.63.2
-	google.golang.org/protobuf v1.34.1
 )
 
 require (
@@ -21,7 +19,5 @@ require (
 	golang.org/x/crypto v0.21.0 // indirect
 	golang.org/x/net v0.22.0 // indirect
 	golang.org/x/sync v0.6.0 // indirect
-	golang.org/x/sys v0.18.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20240318140521-94a12d6c2237 // indirect
 )

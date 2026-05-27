@@ -2,11 +2,16 @@ FROM golang:1.22-bookworm AS builder
 
 WORKDIR /workspace
 
+# Workspace descriptor
 COPY go.work go.work.sum ./
+
+# Shared library
 COPY libs/ libs/
+
+# Target service
 COPY services/submission-engine/ services/submission-engine/
 
-# Stub out other service directories so go.work doesn't fail
+# Stub go.mod/go.sum for remaining workspace members
 COPY services/build-pipeline/go.mod services/build-pipeline/go.mod
 COPY services/build-pipeline/go.sum services/build-pipeline/go.sum
 COPY services/sandbox-controller/go.mod services/sandbox-controller/go.mod
@@ -32,5 +37,4 @@ COPY --from=builder /submission-engine /usr/local/bin/submission-engine
 RUN useradd -u 1001 -m appuser
 USER appuser
 EXPOSE 8443
-
 ENTRYPOINT ["submission-engine"]

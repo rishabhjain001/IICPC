@@ -2,11 +2,16 @@ FROM golang:1.22-bookworm AS builder
 
 WORKDIR /workspace
 
+# Workspace descriptor
 COPY go.work go.work.sum ./
+
+# Shared library
 COPY libs/ libs/
+
+# Target service
 COPY services/sandbox-controller/ services/sandbox-controller/
 
-# Stub out other service directories so go.work doesn't fail
+# Stub go.mod/go.sum for remaining workspace members
 COPY services/submission-engine/go.mod services/submission-engine/go.mod
 COPY services/submission-engine/go.sum services/submission-engine/go.sum
 COPY services/build-pipeline/go.mod services/build-pipeline/go.mod
@@ -31,5 +36,4 @@ COPY --from=builder /sandbox-controller /usr/local/bin/sandbox-controller
 
 RUN useradd -u 1001 -m appuser
 USER appuser
-
 ENTRYPOINT ["sandbox-controller"]
