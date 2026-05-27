@@ -7,9 +7,6 @@ on:
     branches: [main, master]
 
 jobs:
-  # ─────────────────────────────────────────────────────────────────────────────
-  # Go services — build + test
-  # ─────────────────────────────────────────────────────────────────────────────
   go:
     name: Go services
     runs-on: ubuntu-latest
@@ -19,32 +16,25 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.22"
-          cache: true
+          cache-dependency-path: |
+            go.work.sum
+            services/*/go.sum
+            libs/shared-go/go.sum
 
-      - name: Download workspace dependencies
-        run: go work sync
-
-      - name: Build all Go services
+      - name: Build and test all Go services
         run: |
+          set -e
           for svc in submission-engine build-pipeline sandbox-controller \
                      bot-fleet-manager telemetry-ingester leaderboard-service \
                      control-plane-api; do
-            echo "==> Building $svc"
-            (cd services/$svc && go build ./...)
+            echo "==> $svc"
+            cd services/$svc
+            go mod download
+            go build ./...
+            go test ./... -timeout 120s
+            cd ../..
           done
 
-      - name: Test all Go services
-        run: |
-          for svc in submission-engine build-pipeline sandbox-controller \
-                     bot-fleet-manager telemetry-ingester leaderboard-service \
-                     control-plane-api; do
-            echo "==> Testing $svc"
-            (cd services/$svc && go test ./... -timeout 120s)
-          done
-
-  # ─────────────────────────────────────────────────────────────────────────────
-  # Rust — Reference Matching Engine
-  # ─────────────────────────────────────────────────────────────────────────────
   rust:
     name: Rust RME
     runs-on: ubuntu-latest
@@ -61,9 +51,6 @@ jobs:
       - name: Test
         run: cargo test --workspace
 
-  # ─────────────────────────────────────────────────────────────────────────────
-  # Frontend — TypeScript + Vitest
-  # ─────────────────────────────────────────────────────────────────────────────
   frontend:
     name: Frontend
     runs-on: ubuntu-latest
@@ -88,14 +75,14 @@ jobs:
       - name: Run tests
         run: npm test -- --run
 
-  # ─────────────────────────────────────────────────────────────────────────────
-  # Docker Compose — validate and dry-run build
-  # ─────────────────────────────────────────────────────────────────────────────
   docker:
     name: Docker Compose build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Validate docker-compose.yml
         run: docker compose config --quiet

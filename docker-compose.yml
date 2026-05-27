@@ -166,8 +166,8 @@ services:
   # ---------------------------------------------------------------------------
   submission-engine:
     build:
-      context: ./services/submission-engine
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: services/submission-engine/Dockerfile
     container_name: dbhp-submission-engine
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql://dbhp:dbhp@timescaledb:5432/dbhp}
@@ -200,8 +200,8 @@ services:
   # ---------------------------------------------------------------------------
   build-pipeline:
     build:
-      context: ./services/build-pipeline
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: services/build-pipeline/Dockerfile
     container_name: dbhp-build-pipeline
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql://dbhp:dbhp@timescaledb:5432/dbhp}
@@ -228,8 +228,8 @@ services:
   # ---------------------------------------------------------------------------
   sandbox-controller:
     build:
-      context: ./services/sandbox-controller
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: services/sandbox-controller/Dockerfile
     container_name: dbhp-sandbox-controller
     environment:
       CONTROLLER_NAMESPACE: ${CONTROLLER_NAMESPACE:-dbhp-sandboxes}
@@ -249,8 +249,8 @@ services:
   # ---------------------------------------------------------------------------
   bot-fleet-manager:
     build:
-      context: ./services/bot-fleet-manager
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: services/bot-fleet-manager/Dockerfile
     container_name: dbhp-bot-fleet-manager
     environment:
       KUBECONFIG: ${KUBECONFIG:-}
@@ -273,8 +273,8 @@ services:
   # ---------------------------------------------------------------------------
   telemetry-ingester:
     build:
-      context: ./services/telemetry-ingester
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: services/telemetry-ingester/Dockerfile
     container_name: dbhp-telemetry-ingester
     environment:
       KAFKA_BROKERS: ${KAFKA_BROKERS:-redpanda:9092}
@@ -308,8 +308,8 @@ services:
   # ---------------------------------------------------------------------------
   leaderboard-service:
     build:
-      context: ./services/leaderboard-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: services/leaderboard-service/Dockerfile
     container_name: dbhp-leaderboard-service
     environment:
       HTTP_ADDR: ":8082"
@@ -361,8 +361,8 @@ services:
   # ---------------------------------------------------------------------------
   control-plane-api:
     build:
-      context: ./services/control-plane-api
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: services/control-plane-api/Dockerfile
     container_name: dbhp-control-plane-api
     environment:
       GRPC_ADDR: ":9090"
