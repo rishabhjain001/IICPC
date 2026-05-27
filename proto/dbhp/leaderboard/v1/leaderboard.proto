@@ -1,0 +1,108 @@
+syntax = "proto3";
+
+package dbhp.leaderboard.v1;
+
+option go_package = "github.com/iicpc/dbhp/gen/go/dbhp/leaderboard/v1;leaderboardv1";
+
+import "google/protobuf/timestamp.proto";
+
+// LeaderboardService exposes ranked standings and per-contestant score data.
+// It is callable by the Control Plane API and by the Leaderboard Frontend
+// (via a gRPC-Web gateway).
+service LeaderboardService {
+  // GetLeaderboard returns a paginated snapshot of the current leaderboard.
+  // p99 response time ≤ 50 ms for pages up to 100 contestants (Req 11.6).
+  rpc GetLeaderboard(LeaderboardRequest) returns (LeaderboardPage);
+
+  // GetContestantScore returns the latest scores for a specific contestant.
+  rpc GetContestantScore(ContestantScoreRequest) returns (ContestantScore);
+
+  // StreamLeaderboard sends incremental SCORE_UPDATE events to the caller
+  // as new scores are published. Used by the WebSocket fan-out hub.
+  rpc StreamLeaderboard(StreamRequest) returns (stream LeaderboardUpdate);
+}
+
+// ---------------------------------------------------------------------------
+// Messages
+// ---------------------------------------------------------------------------
+
+message LeaderboardRequest {
+  // 1-based page number.
+  uint32 page = 1;
+
+  // Number of entries per page (max 100).
+  uint32 page_size = 2;
+}
+
+message LeaderboardPage {
+  repeated LeaderboardEntry entries = 1;
+
+  uint32 total = 2;
+  uint32 page = 3;
+  uint32 page_size = 4;
+
+  google.protobuf.Timestamp computed_at = 5;
+
+  // HTTP ETag for client-side caching.
+  string etag = 6;
+}
+
+message LeaderboardEntry {
+  uint32 rank = 1;
+  string contestant_id = 2;
+  string contestant_handle = 3;
+
+  double composite_score = 4;
+  double speed_score = 5;
+  double stability_score = 6;
+  double accuracy_score = 7;
+
+  // p99 round-trip latency in milliseconds.
+  double p99_latency_ms = 8;
+
+  // Maximum sustained TPS.
+  uint64 max_tps = 9;
+
+  // Fill accuracy as a percentage 0.0 – 100.0.
+  double fill_accuracy_pct = 10;
+
+  // Current Benchmark Run status string.
+  string run_status = 11;
+
+  string benchmark_run_id = 12;
+}
+
+message ContestantScoreRequest {
+  string contestant_id = 1;
+}
+
+message ContestantScore {
+  string contestant_id = 1;
+  string contestant_handle = 2;
+
+  // Maximum composite score across all historical Benchmark Runs.
+  double composite_score = 3;
+  double speed_score = 4;
+  double stability_score = 5;
+  double accuracy_score = 6;
+
+  // The Benchmark Run ID that produced the maximum composite score.
+  string best_run_id = 7;
+
+  google.protobuf.Timestamp computed_at = 8;
+}
+
+message StreamRequest {
+  // If set, only stream updates for this specific contestant.
+  // Leave empty to receive all updates.
+  string contestant_id = 1;
+}
+
+message LeaderboardUpdate {
+  // Type is always "SCORE_UPDATE" for now; reserved for future event types.
+  string type = 1;
+
+  LeaderboardEntry entry = 2;
+
+  google.protobuf.Timestamp timestamp = 3;
+}

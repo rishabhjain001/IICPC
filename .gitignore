@@ -1,0 +1,41 @@
+# Environment secrets
+.env
+
+# Go build artifacts
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+dist/
+bin/
+
+# Go test cache
+*.test
+*.out
+coverage.txt
+
+# Rust build artifacts
+target/
+Cargo.lock
+
+# Node / Frontend
+node_modules/
+services/leaderboard-frontend/dist/
+services/leaderboard-frontend/.vite/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+.docker/
+
+# Logs
+*.log

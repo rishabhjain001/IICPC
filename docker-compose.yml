@@ -1,0 +1,386 @@
+version: "3.9"
+
+# ============================================================
+# DBHP — Distributed Benchmarking and Hosting Platform
+# docker-compose.yml
+#
+# Bring up the full platform stack for local development /
+# smoke-testing.  Production deployments use Kubernetes; this
+# file mirrors the topology for faster iteration.
+#
+# Usage:
+#   docker compose --env-file .env up -d
+#   docker compose logs -f submission-engine
+#
+# All configuration is read from the environment (or .env.example).
+# Override any variable by exporting it before running compose.
+# ============================================================
+
+networks:
+  dbhp-internal:
+    driver: bridge
+
+volumes:
+  timescaledb_data:
+  redis_data:
+  registry_data:
+  redpanda_data:
+
+# ─────────────────────────────────────────────────────────────────────────────
+# INFRASTRUCTURE
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  # ---------------------------------------------------------------------------
+  # Redpanda — Kafka-compatible single-node event bus
+  # ---------------------------------------------------------------------------
+  redpanda:
+    image: redpandadata/redpanda:v24.1.1
+    container_name: dbhp-redpanda
+    command:
+      - redpanda
+      - start
+      - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr internal://redpanda:9092,external://localhost:19092
+      - --pandaproxy-addr internal://0.0.0.0:8082,external://0.0.0.0:18082
+      - --advertise-pandaproxy-addr internal://redpanda:8082,external://localhost:18082
+      - --schema-registry-addr internal://0.0.0.0:8081,external://0.0.0.0:18081
+      - --rpc-addr redpanda:33145
+      - --advertise-rpc-addr redpanda:33145
+      - --mode dev-container
+      - --smp 1
+      - --default-log-level=warn
+    ports:
+      - "${REDPANDA_KAFKA_PORT:-9092}:9092"
+      - "${REDPANDA_ADMIN_PORT:-9644}:9644"
+    volumes:
+      - redpanda_data:/var/lib/redpanda/data
+    networks:
+      - dbhp-internal
+    healthcheck:
+      test: ["CMD", "rpk", "cluster", "health"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  # ---------------------------------------------------------------------------
+  # TimescaleDB — PostgreSQL + TimescaleDB extension for telemetry hypertables
+  # ---------------------------------------------------------------------------
+  timescaledb:
+    image: timescale/timescaledb:2.14.2-pg16
+    container_name: dbhp-timescaledb
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-dbhp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dbhp}
+      POSTGRES_DB: ${POSTGRES_DB:-dbhp}
+      TIMESCALEDB_TELEMETRY: "off"
+    ports:
+      - "${TIMESCALEDB_PORT:-5432}:5432"
+    volumes:
+      - timescaledb_data:/var/lib/postgresql/data
+      - ./migrations/postgres:/docker-entrypoint-initdb.d/postgres:ro
+      - ./migrations/timescaledb:/docker-entrypoint-initdb.d/timescaledb:ro
+    networks:
+      - dbhp-internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dbhp} -d ${POSTGRES_DB:-dbhp}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  # ---------------------------------------------------------------------------
+  # Redis 7 — real-time cache, pub/sub, rate-limit sorted sets
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7.2.4-alpine
+    container_name: dbhp-redis
+    command: redis-server --save 60 1 --loglevel warning --maxmemory 512mb --maxmemory-policy allkeys-lru
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - dbhp-internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
+
+  # ---------------------------------------------------------------------------
+  # Docker Registry v2 — Artifact Registry for OCI images and raw binaries
+  # ---------------------------------------------------------------------------
+  registry:
+    image: registry:2.8.3
+    container_name: dbhp-registry
+    environment:
+      REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY: /var/lib/registry
+      REGISTRY_HTTP_ADDR: 0.0.0.0:5000
+      REGISTRY_STORAGE_DELETE_ENABLED: "true"
+    ports:
+      - "${REGISTRY_PORT:-5000}:5000"
+    volumes:
+      - registry_data:/var/lib/registry
+    networks:
+      - dbhp-internal
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:5000/v2/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PLATFORM SERVICES
+# ─────────────────────────────────────────────────────────────────────────────
+
+  # ---------------------------------------------------------------------------
+  # Submission Engine — HTTPS :8443, artifact ingestion and rate limiting
+  # ---------------------------------------------------------------------------
+  submission-engine:
+    build:
+      context: ./services/submission-engine
+      dockerfile: Dockerfile
+    container_name: dbhp-submission-engine
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql://dbhp:dbhp@timescaledb:5432/dbhp}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      ARTIFACT_REGISTRY_URL: ${ARTIFACT_REGISTRY_URL:-http://registry:5000}
+      TLS_CERT_FILE: ${TLS_CERT_FILE:-/certs/server.crt}
+      TLS_KEY_FILE: ${TLS_KEY_FILE:-/certs/server.key}
+      PORT: "8443"
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      - "8443:8443"
+    networks:
+      - dbhp-internal
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      registry:
+        condition: service_healthy
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "5"
+
+  # ---------------------------------------------------------------------------
+  # Build Pipeline — Hermetic job controller; watches submissions for UPLOADED
+  # ---------------------------------------------------------------------------
+  build-pipeline:
+    build:
+      context: ./services/build-pipeline
+      dockerfile: Dockerfile
+    container_name: dbhp-build-pipeline
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql://dbhp:dbhp@timescaledb:5432/dbhp}
+      ARTIFACT_REGISTRY_URL: ${ARTIFACT_REGISTRY_URL:-http://registry:5000}
+      BUILD_NAMESPACE: ${BUILD_NAMESPACE:-dbhp-builds}
+      KUBECONFIG: ${KUBECONFIG:-}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    networks:
+      - dbhp-internal
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      registry:
+        condition: service_healthy
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "5"
+
+  # ---------------------------------------------------------------------------
+  # Sandbox Controller — Kubernetes operator managing Sandbox CRDs
+  # ---------------------------------------------------------------------------
+  sandbox-controller:
+    build:
+      context: ./services/sandbox-controller
+      dockerfile: Dockerfile
+    container_name: dbhp-sandbox-controller
+    environment:
+      CONTROLLER_NAMESPACE: ${CONTROLLER_NAMESPACE:-dbhp-sandboxes}
+      KUBECONFIG: ${KUBECONFIG:-}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    networks:
+      - dbhp-internal
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "5"
+
+  # ---------------------------------------------------------------------------
+  # Bot Fleet Manager — provisions and schedules synthetic trading bots
+  # ---------------------------------------------------------------------------
+  bot-fleet-manager:
+    build:
+      context: ./services/bot-fleet-manager
+      dockerfile: Dockerfile
+    container_name: dbhp-bot-fleet-manager
+    environment:
+      KUBECONFIG: ${KUBECONFIG:-}
+      BOT_WORKER_LABEL: ${BOT_WORKER_LABEL:-role=bot-worker}
+      HEARTBEAT_INTERVAL_S: ${HEARTBEAT_INTERVAL_S:-5}
+      NODE_FAILURE_TIMEOUT_S: ${NODE_FAILURE_TIMEOUT_S:-15}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    networks:
+      - dbhp-internal
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "5"
+
+  # ---------------------------------------------------------------------------
+  # Telemetry Ingester — Kafka consumer, RME validation, TimescaleDB writer
+  # RME Rust library is mounted as a shared volume from ./libs/rme
+  # ---------------------------------------------------------------------------
+  telemetry-ingester:
+    build:
+      context: ./services/telemetry-ingester
+      dockerfile: Dockerfile
+    container_name: dbhp-telemetry-ingester
+    environment:
+      KAFKA_BROKERS: ${KAFKA_BROKERS:-redpanda:9092}
+      KAFKA_GROUP_ID: ${KAFKA_GROUP_ID:-telemetry-ingester}
+      KAFKA_ENV: ${KAFKA_ENV:-dev}
+      TIMESCALE_DSN: ${TIMESCALE_DSN:-postgresql://dbhp:dbhp@timescaledb:5432/dbhp}
+      REDIS_ADDR: ${REDIS_ADDR:-redis:6379}
+      RME_LIB_PATH: ${RME_LIB_PATH:-/rme/target/release/libdbhp_rme.so}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    volumes:
+      # Mount the RME shared library source so the compiled .so is accessible.
+      - ./libs/rme:/rme:ro
+    networks:
+      - dbhp-internal
+    depends_on:
+      redpanda:
+        condition: service_healthy
+      timescaledb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "5"
+
+  # ---------------------------------------------------------------------------
+  # Leaderboard Service — scores, WebSocket fan-out, REST snapshot
+  # ---------------------------------------------------------------------------
+  leaderboard-service:
+    build:
+      context: ./services/leaderboard-service
+      dockerfile: Dockerfile
+    container_name: dbhp-leaderboard-service
+    environment:
+      HTTP_ADDR: ":8082"
+      REDIS_ADDR: ${REDIS_ADDR:-redis:6379}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://dbhp:dbhp@timescaledb:5432/dbhp}
+      INTERNAL_BEARER_TOKEN: ${INTERNAL_BEARER_TOKEN:-dev-secret-token}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    networks:
+      - dbhp-internal
+    depends_on:
+      redis:
+        condition: service_healthy
+      timescaledb:
+        condition: service_healthy
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "5"
+
+  # ---------------------------------------------------------------------------
+  # Leaderboard Frontend — browser SPA served on :3000
+  # ---------------------------------------------------------------------------
+  leaderboard-frontend:
+    build:
+      context: ./services/leaderboard-frontend
+      dockerfile: Dockerfile
+    container_name: dbhp-leaderboard-frontend
+    environment:
+      LEADERBOARD_WS_URL: ${LEADERBOARD_WS_URL:-ws://leaderboard-service:8082/v1/ws/leaderboard}
+      LEADERBOARD_API_URL: ${LEADERBOARD_API_URL:-http://leaderboard-service:8082}
+      PORT: "3000"
+    ports:
+      - "3000:3000"
+    networks:
+      - dbhp-internal
+    depends_on:
+      - leaderboard-service
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  # ---------------------------------------------------------------------------
+  # Control Plane API — gRPC :9090, Prometheus metrics :9091
+  # ---------------------------------------------------------------------------
+  control-plane-api:
+    build:
+      context: ./services/control-plane-api
+      dockerfile: Dockerfile
+    container_name: dbhp-control-plane-api
+    environment:
+      GRPC_ADDR: ":9090"
+      METRICS_ADDR: ":9091"
+      DATABASE_URL: ${DATABASE_URL:-postgresql://dbhp:dbhp@timescaledb:5432/dbhp}
+      INTERNAL_BEARER_TOKEN: ${INTERNAL_BEARER_TOKEN:-dev-secret-token}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      - "9090:9090"
+      - "9091:9091"
+    networks:
+      - dbhp-internal
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "5"

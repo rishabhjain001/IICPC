@@ -1,0 +1,68 @@
+syntax = "proto3";
+
+package dbhp.submission.v1;
+
+option go_package = "github.com/iicpc/dbhp/gen/go/dbhp/submission/v1;submissionv1";
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+
+// ContestantService manages contestant registration and API token lifecycle.
+service ContestantService {
+  // RegisterContestant creates a new contestant account.
+  rpc RegisterContestant(RegisterRequest) returns (Contestant);
+
+  // IssueToken mints a new API bearer token for the contestant.
+  rpc IssueToken(IssueTokenRequest) returns (TokenResponse);
+
+  // RevokeToken invalidates an existing token immediately.
+  rpc RevokeToken(RevokeRequest) returns (google.protobuf.Empty);
+}
+
+// ---------------------------------------------------------------------------
+// Messages
+// ---------------------------------------------------------------------------
+
+message RegisterRequest {
+  // Unique display name for the contestant. Must be alphanumeric + underscores,
+  // 3–32 characters.
+  string handle = 1;
+
+  // Contestant's email address (used for notifications).
+  string email = 2;
+}
+
+message Contestant {
+  // Globally unique contestant identifier (UUID v4).
+  string id = 1;
+
+  string handle = 2;
+  string email = 3;
+
+  google.protobuf.Timestamp created_at = 4;
+  google.protobuf.Timestamp updated_at = 5;
+}
+
+message IssueTokenRequest {
+  // Contestant ID for which to mint the token.
+  string contestant_id = 1;
+
+  // Optional token expiry. If unset the token does not expire.
+  google.protobuf.Timestamp expires_at = 2;
+}
+
+message TokenResponse {
+  // Opaque bearer token string. Returned only at issuance; never re-readable.
+  string token = 1;
+
+  // The token record ID (UUID). Use this for revocation.
+  string token_id = 2;
+
+  google.protobuf.Timestamp issued_at = 3;
+  google.protobuf.Timestamp expires_at = 4;
+}
+
+message RevokeRequest {
+  // Token record ID to revoke.
+  string token_id = 1;
+}

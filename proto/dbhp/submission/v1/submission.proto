@@ -1,0 +1,51 @@
+syntax = "proto3";
+
+package dbhp.submission.v1;
+
+option go_package = "github.com/iicpc/dbhp/gen/go/dbhp/submission/v1;submissionv1";
+
+// SubmissionService exposes submission status and build log access.
+service SubmissionService {
+  // GetSubmissionStatus returns the current status of a submission.
+  rpc GetSubmissionStatus(SubmissionStatusRequest) returns (SubmissionStatus);
+
+  // GetBuildLog streams the captured build log for a submission (server-side
+  // streaming). Returns NOT_FOUND if no build log exists.
+  rpc GetBuildLog(BuildLogRequest) returns (stream BuildLogChunk);
+}
+
+// ---------------------------------------------------------------------------
+// Messages
+// ---------------------------------------------------------------------------
+
+message SubmissionStatusRequest {
+  string submission_id = 1;
+}
+
+message SubmissionStatus {
+  // Globally unique submission identifier (UUID v4).
+  string submission_id = 1;
+
+  // Current status string. One of: UPLOADED, BUILT, BUILD_FAILED,
+  // BUILD_TIMEOUT, BUILD_PUBLISH_FAILED, BUILD_INFRASTRUCTURE_ERROR.
+  string status = 2;
+
+  // URL of the stored build log in the Artifact Registry. Empty until a build
+  // has run (regardless of outcome).
+  string build_log_url = 3;
+
+  // OCI image digest (sha256:...) set when status == BUILT.
+  string image_digest = 4;
+}
+
+message BuildLogRequest {
+  string submission_id = 1;
+}
+
+message BuildLogChunk {
+  // Raw bytes of one chunk of the build log (stdout + stderr interleaved).
+  bytes data = 1;
+
+  // Offset in bytes of this chunk within the full log.
+  int64 offset = 2;
+}

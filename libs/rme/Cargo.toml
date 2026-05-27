@@ -1,0 +1,16 @@
+[package]
+name = "dbhp-rme"
+version = "0.1.0"
+edition = "2021"
+description = "Reference Matching Engine — deterministic price-time priority order matching"
+
+[lib]
+name = "dbhp_rme"
+crate-type = ["lib", "cdylib"]
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }

@@ -1,0 +1,95 @@
+syntax = "proto3";
+
+package dbhp.sandbox.v1;
+
+option go_package = "github.com/iicpc/dbhp/gen/go/dbhp/sandbox/v1;sandboxv1";
+
+import "google/protobuf/empty.proto";
+
+// SandboxController is the internal gRPC interface exposed by the Kubernetes
+// operator. It is called exclusively by the Bot Fleet Manager and the Control
+// Plane.
+service SandboxController {
+  // GetSandboxEndpoints returns all AVAILABLE endpoints for the given
+  // Benchmark Run. Returns gRPC NOT_READY when the Sandbox has not yet
+  // reached RUNNING state.
+  rpc GetSandboxEndpoints(GetEndpointsRequest) returns (EndpointList);
+
+  // GetSandboxStatus returns the current phase and health information for
+  // the Sandbox pod.
+  rpc GetSandboxStatus(StatusRequest) returns (SandboxStatus);
+
+  // TerminateSandbox forcibly stops the Sandbox pod and releases all
+  // reserved resources.
+  rpc TerminateSandbox(TerminateRequest) returns (google.protobuf.Empty);
+}
+
+// ---------------------------------------------------------------------------
+// Messages
+// ---------------------------------------------------------------------------
+
+message GetEndpointsRequest {
+  string benchmark_run_id = 1;
+}
+
+message EndpointList {
+  repeated Endpoint endpoints = 1;
+
+  // Populated when the gRPC NOT_READY status is returned; human-readable
+  // reason why the sandbox is not yet in RUNNING state.
+  string not_ready_reason = 2;
+}
+
+message Endpoint {
+  // Dynamically assigned internal IP within the sandbox overlay network.
+  string internal_ip = 1;
+
+  // Well-known port: FIX=9898, REST=8080, WebSocket=8081.
+  uint32 port = 2;
+
+  Protocol protocol = 3;
+
+  // The submission whose binary is listening on this endpoint.
+  string submission_id = 4;
+
+  string benchmark_run_id = 5;
+
+  EndpointStatus status = 6;
+}
+
+message StatusRequest {
+  string benchmark_run_id = 1;
+}
+
+message SandboxStatus {
+  // One of: PENDING, RUNNING, UNHEALTHY, CRASHED, COMPLETED, FAILED.
+  string phase = 1;
+
+  string internal_ip = 2;
+
+  // Set when phase is CRASHED or FAILED.
+  string termination_reason = 3;
+  int32 exit_code = 4;
+}
+
+message TerminateRequest {
+  string benchmark_run_id = 1;
+
+  // Optional human-readable reason recorded in the audit trail.
+  string reason = 2;
+}
+
+// ---------------------------------------------------------------------------
+// Enumerations
+// ---------------------------------------------------------------------------
+
+enum Protocol {
+  FIX = 0;
+  REST = 1;
+  WEBSOCKET = 2;
+}
+
+enum EndpointStatus {
+  AVAILABLE = 0;
+  UNAVAILABLE = 1;
+}

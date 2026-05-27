@@ -1,0 +1,28 @@
+# NetworkPolicy: deny ALL egress from build pods in dbhp-builds namespace.
+#
+# The build container must have no outbound network access (Requirement 2.2).
+# Base images are pre-pulled to Kubernetes nodes so the build container never
+# needs to reach the internet or the Artifact Registry directly during
+# compilation.
+#
+# Ingress is left unrestricted so that the init container (wired in Task 4.2)
+# can pull the source artifact from the cluster-internal Artifact Registry.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dbhp-build-no-egress
+  namespace: dbhp-builds
+  labels:
+    app.kubernetes.io/part-of: dbhp
+    app.kubernetes.io/component: build-pipeline
+spec:
+  # Target all pods that carry the dbhp-build app label (build Jobs).
+  podSelector:
+    matchLabels:
+      app: dbhp-build
+
+  policyTypes:
+    - Egress
+
+  # Empty egress list = deny all outbound traffic.
+  egress: []

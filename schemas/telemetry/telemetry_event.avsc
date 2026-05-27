@@ -1,0 +1,63 @@
+{
+  "namespace": "io.iicpc.dbhp.telemetry",
+  "type": "record",
+  "name": "TelemetryEvent",
+  "doc": "Raw latency sample emitted by a Synthetic Trading Bot or a Sandbox response interceptor. One event per outbound message / inbound response pair.",
+  "fields": [
+    {
+      "name": "schema_version",
+      "type": "int",
+      "doc": "Schema version for BACKWARD-compatible evolution. Current version: 1."
+    },
+    {
+      "name": "benchmark_run_id",
+      "type": "string",
+      "doc": "UUID of the Benchmark Run this event belongs to. Used as the Kafka partition key."
+    },
+    {
+      "name": "bot_id",
+      "type": "string",
+      "doc": "UUID of the Synthetic Trading Bot that sent the original message."
+    },
+    {
+      "name": "seq_num",
+      "type": "long",
+      "doc": "Monotonically increasing per-bot-session sequence number (resets to 1 at session start). Used for deduplication and time-priority ordering."
+    },
+    {
+      "name": "protocol",
+      "type": {
+        "type": "enum",
+        "name": "Protocol",
+        "symbols": ["FIX", "REST", "WS"]
+      },
+      "doc": "Transport protocol used for this message."
+    },
+    {
+      "name": "send_ts_ns",
+      "type": "long",
+      "doc": "Nanosecond-resolution Unix timestamp at which the bot sent the message."
+    },
+    {
+      "name": "recv_ts_ns",
+      "type": "long",
+      "doc": "Nanosecond-resolution Unix timestamp at which the bot received the response."
+    },
+    {
+      "name": "request_id",
+      "type": "string",
+      "doc": "Globally unique request ID within the Benchmark Run (ClOrdID for FIX, request UUID for REST/WS)."
+    },
+    {
+      "name": "error_code",
+      "type": ["null", "string"],
+      "default": null,
+      "doc": "Optional error code string (e.g., HTTP status '429', FIX tag 58 reason). Null for successful messages."
+    },
+    {
+      "name": "payload_bytes",
+      "type": "bytes",
+      "doc": "Raw serialised message payload (truncated to 4 KB if larger). Retained for audit purposes."
+    }
+  ]
+}

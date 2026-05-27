@@ -1,0 +1,106 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Go services — build + test
+  # ─────────────────────────────────────────────────────────────────────────────
+  go:
+    name: Go services
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache: true
+
+      - name: Download workspace dependencies
+        run: go work sync
+
+      - name: Build all Go services
+        run: |
+          for svc in submission-engine build-pipeline sandbox-controller \
+                     bot-fleet-manager telemetry-ingester leaderboard-service \
+                     control-plane-api; do
+            echo "==> Building $svc"
+            (cd services/$svc && go build ./...)
+          done
+
+      - name: Test all Go services
+        run: |
+          for svc in submission-engine build-pipeline sandbox-controller \
+                     bot-fleet-manager telemetry-ingester leaderboard-service \
+                     control-plane-api; do
+            echo "==> Testing $svc"
+            (cd services/$svc && go test ./... -timeout 120s)
+          done
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Rust — Reference Matching Engine
+  # ─────────────────────────────────────────────────────────────────────────────
+  rust:
+    name: Rust RME
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Check
+        run: cargo check --workspace
+
+      - name: Test
+        run: cargo test --workspace
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Frontend — TypeScript + Vitest
+  # ─────────────────────────────────────────────────────────────────────────────
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/leaderboard-frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: services/leaderboard-frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Run tests
+        run: npm test -- --run
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Docker Compose — validate and dry-run build
+  # ─────────────────────────────────────────────────────────────────────────────
+  docker:
+    name: Docker Compose build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate docker-compose.yml
+        run: docker compose config --quiet
+
+      - name: Build all images
+        run: docker compose build --parallel
+        env:
+          DOCKER_BUILDKIT: "1"

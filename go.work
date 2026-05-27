@@ -1,0 +1,12 @@
+go 1.22
+
+use (
+	./services/submission-engine
+	./services/build-pipeline
+	./services/sandbox-controller
+	./services/bot-fleet-manager
+	./services/telemetry-ingester
+	./services/leaderboard-service
+	./services/control-plane-api
+	./libs/shared-go
+)

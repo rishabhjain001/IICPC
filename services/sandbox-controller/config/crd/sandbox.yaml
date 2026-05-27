@@ -1,0 +1,55 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: sandboxes.dbhp.iicpc.io
+spec:
+  group: dbhp.iicpc.io
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                submissionId:
+                  type: string
+                benchmarkRunId:
+                  type: string
+                cpuCores:
+                  type: integer
+                  minimum: 2
+                  maximum: 8
+                memoryLimitGiB:
+                  type: integer
+                tmpfsSizeGiB:
+                  type: integer
+                maxLifetimeSeconds:
+                  type: integer
+                healthCheckPath:
+                  type: string
+                protocols:
+                  type: array
+                  items:
+                    type: string
+            status:
+              type: object
+              properties:
+                phase:
+                  type: string
+                internalIP:
+                  type: string
+                endpoints:
+                  type: array
+                terminationReason:
+                  type: string
+                exitCode:
+                  type: integer
+  scope: Namespaced
+  names:
+    plural: sandboxes
+    singular: sandbox
+    kind: Sandbox

@@ -1,0 +1,106 @@
+syntax = "proto3";
+
+package dbhp.control.v1;
+
+option go_package = "github.com/iicpc/dbhp/gen/go/dbhp/control/v1;controlv1";
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+
+// BenchmarkService manages the full lifecycle of Benchmark Runs.
+// Each run follows the state machine defined in design.md §8.
+service BenchmarkService {
+  // CreateRun enqueues a new Benchmark Run for the given contestant and
+  // submission. Returns RESOURCE_EXHAUSTED if the contestant already has 3
+  // concurrent non-terminal runs (Requirement 11.4).
+  rpc CreateRun(CreateRunRequest) returns (BenchmarkRun);
+
+  // GetRun returns the current state of a single Benchmark Run.
+  rpc GetRun(GetRunRequest) returns (BenchmarkRun);
+
+  // ListRuns returns paginated Benchmark Runs filtered by contestant or status.
+  rpc ListRuns(ListRunsRequest) returns (BenchmarkRunList);
+
+  // CancelRun requests graceful cancellation of a non-terminal run.
+  // Transitions terminal failure states are recorded in the audit trail.
+  rpc CancelRun(CancelRunRequest) returns (google.protobuf.Empty);
+}
+
+// ---------------------------------------------------------------------------
+// Messages
+// ---------------------------------------------------------------------------
+
+message CreateRunRequest {
+  string contestant_id = 1;
+  string submission_id = 2;
+
+  // Number of bots to provision (100 – 10 000). Default 1000 if unset.
+  uint32 bot_count = 3;
+
+  // Optional custom scenario distribution. Uses platform defaults if unset.
+  ScenarioDistribution distribution = 4;
+}
+
+// ScenarioDistribution mirrors the BotFleetManager definition to avoid a
+// cross-package dependency from the Control Plane proto.
+message ScenarioDistribution {
+  float market_maker_pct = 1;
+  float aggressive_taker_pct = 2;
+  float cancel_spammer_pct = 3;
+  float mixed_retail_pct = 4;
+  float latency_prober_pct = 5;
+}
+
+message BenchmarkRun {
+  string id = 1;
+  string contestant_id = 2;
+  string submission_id = 3;
+
+  // Status string following the state machine:
+  // QUEUED → BUILDING → DEPLOYING → RUNNING → COLLECTING → SCORING → COMPLETE
+  // Terminal failures: BUILD_FAILED, BUILD_TIMEOUT, SANDBOX_CRASH,
+  // NETWORK_SETUP_FAILED, NO_ENDPOINTS, PROVISIONING_TIMEOUT,
+  // INSUFFICIENT_CAPACITY, COLLECTION_TIMEOUT, FAILED.
+  string status = 4;
+
+  uint32 bot_count = 5;
+
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp started_at = 7;
+  google.protobuf.Timestamp completed_at = 8;
+
+  // Scoring fields. Populated once status == COMPLETE.
+  double composite_score = 9;
+  double speed_score = 10;
+  double stability_score = 11;
+  double accuracy_score = 12;
+}
+
+message GetRunRequest {
+  string benchmark_run_id = 1;
+}
+
+message ListRunsRequest {
+  // Optional filter by contestant.
+  string contestant_id = 1;
+
+  // Optional filter by status (exact match).
+  string status = 2;
+
+  uint32 page = 3;
+  uint32 page_size = 4;
+}
+
+message BenchmarkRunList {
+  repeated BenchmarkRun runs = 1;
+  uint32 total = 2;
+  uint32 page = 3;
+  uint32 page_size = 4;
+}
+
+message CancelRunRequest {
+  string benchmark_run_id = 1;
+
+  // Human-readable cancellation reason stored in the audit trail.
+  string reason = 2;
+}

@@ -1,0 +1,57 @@
+{
+  "namespace": "io.iicpc.dbhp.telemetry",
+  "type": "record",
+  "name": "FillEvent",
+  "doc": "A fill (execution) event reported by a Sandbox submission. Ingested by the Telemetry Ingester and validated against the Reference Matching Engine.",
+  "fields": [
+    {
+      "name": "schema_version",
+      "type": "int",
+      "doc": "Schema version for BACKWARD-compatible evolution. Current version: 1."
+    },
+    {
+      "name": "benchmark_run_id",
+      "type": "string",
+      "doc": "UUID of the Benchmark Run this fill belongs to. Used as the Kafka partition key."
+    },
+    {
+      "name": "order_id",
+      "type": "string",
+      "doc": "The platform-assigned order identifier that was filled (maps to ClOrdID in FIX mode)."
+    },
+    {
+      "name": "fill_ts_ns",
+      "type": "long",
+      "doc": "Nanosecond-resolution Unix timestamp at which the Sandbox reported the fill."
+    },
+    {
+      "name": "filled_qty",
+      "type": "long",
+      "doc": "Number of shares / lots filled in this event."
+    },
+    {
+      "name": "fill_price",
+      "type": {
+        "type": "bytes",
+        "logicalType": "decimal",
+        "precision": 18,
+        "scale": 8
+      },
+      "doc": "Execution price as an 18-digit decimal with 8 decimal places, stored as big-endian two's-complement bytes."
+    },
+    {
+      "name": "side",
+      "type": {
+        "type": "enum",
+        "name": "Side",
+        "symbols": ["BUY", "SELL"]
+      },
+      "doc": "Side of the aggressive (matched) order."
+    },
+    {
+      "name": "cl_ord_id",
+      "type": "string",
+      "doc": "Client order ID as embedded in the original FIX/REST/WS message. Used for end-to-end correlation."
+    }
+  ]
+}
