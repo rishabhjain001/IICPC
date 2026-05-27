@@ -16,6 +16,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.22"
+          cache-dependency-path: "go.work.sum"
 
       - name: Build and test all Go services
         run: |
@@ -29,8 +30,6 @@ jobs:
             go test ./... -timeout 120s
             popd
           done
-        env:
-          GOFLAGS: "-mod=mod"
 
   rust:
     name: Rust RME
