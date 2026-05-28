@@ -2,13 +2,12 @@ FROM golang:1.22-bookworm AS builder
 
 WORKDIR /workspace
 
-# Copy shared library and service source (no go.work - standalone build)
 COPY libs/ libs/
 COPY services/control-plane-api/ services/control-plane-api/
 
 WORKDIR /workspace/services/control-plane-api
-RUN go mod download
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -o /control-plane-api .
+RUN GOWORK=off go mod download
+RUN GOWORK=off CGO_ENABLED=0 GOOS=linux go build -trimpath -o /control-plane-api .
 
 FROM debian:bookworm-slim
 

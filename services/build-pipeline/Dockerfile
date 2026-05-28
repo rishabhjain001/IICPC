@@ -2,13 +2,12 @@ FROM golang:1.22-bookworm AS builder
 
 WORKDIR /workspace
 
-# Copy shared library and service source (no go.work - standalone build)
 COPY libs/ libs/
 COPY services/build-pipeline/ services/build-pipeline/
 
 WORKDIR /workspace/services/build-pipeline
-RUN go mod download
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -o /build-pipeline .
+RUN GOWORK=off go mod download
+RUN GOWORK=off CGO_ENABLED=0 GOOS=linux go build -trimpath -o /build-pipeline .
 
 FROM debian:bookworm-slim
 
@@ -18,4 +17,5 @@ COPY --from=builder /build-pipeline /usr/local/bin/build-pipeline
 
 RUN useradd -u 1001 -m appuser
 USER appuser
+
 ENTRYPOINT ["build-pipeline"]
