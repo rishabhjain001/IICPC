@@ -85,8 +85,19 @@ func (h *LeaderboardHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Compute ETag as hex-encoded SHA-256 of the response body.
-	sum := sha256.Sum256(body)
+	// Compute ETag from stable fields only (rank + contestant_id + score),
+	// excluding ComputedAt so the ETag is deterministic for identical data.
+	type stableEntry struct {
+		Rank           uint32  `json:"rank"`
+		ContestantID   string  `json:"contestant_id"`
+		CompositeScore float64 `json:"composite_score"`
+	}
+	stable := make([]stableEntry, len(entries))
+	for i, e := range entries {
+		stable[i] = stableEntry{Rank: e.Rank, ContestantID: e.ContestantID, CompositeScore: e.CompositeScore}
+	}
+	stableBytes, _ := json.Marshal(stable)
+	sum := sha256.Sum256(stableBytes)
 	etag := fmt.Sprintf(`"%x"`, sum)
 
 	w.Header().Set("Content-Type", "application/json")
