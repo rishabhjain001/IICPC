@@ -84,7 +84,7 @@ jobs:
       - name: Validate docker-compose.yml
         run: docker compose config --quiet
 
-      - name: Build all images
-        run: docker compose build --parallel
+      - name: Build all images (no cache)
+        run: docker compose build --parallel --no-cache --pull
         env:
           DOCKER_BUILDKIT: "1"
