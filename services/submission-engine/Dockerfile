@@ -2,12 +2,13 @@ FROM golang:1.22-bookworm AS builder
 
 WORKDIR /workspace
 
-COPY go.work go.work.sum ./
+# Copy shared library and service source (no go.work - standalone build)
 COPY libs/ libs/
-COPY services/ services/
+COPY services/submission-engine/ services/submission-engine/
 
 WORKDIR /workspace/services/submission-engine
-RUN GOWORK=off GOFLAGS=-mod=mod CGO_ENABLED=0 GOOS=linux go build -trimpath -o /submission-engine .
+RUN go mod download
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -o /submission-engine .
 
 FROM debian:bookworm-slim
 
