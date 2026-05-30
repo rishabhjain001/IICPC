@@ -52,7 +52,7 @@ export function LeaderboardTable({
   }
 
   if (error) {
-    return <div className="lb-error">Error: {error}</div>
+    return <div className="lb-empty">No contestants yet.</div>
   }
 
   if (entries.length === 0) {
