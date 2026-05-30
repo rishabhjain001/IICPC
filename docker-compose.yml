@@ -315,6 +315,8 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgresql://dbhp:dbhp@timescaledb:5432/dbhp}
       INTERNAL_BEARER_TOKEN: ${INTERNAL_BEARER_TOKEN:-dev-secret-token}
       LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      - "8082:8082"
     networks:
       - dbhp-internal
     depends_on:
