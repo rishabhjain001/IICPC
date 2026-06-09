@@ -24,9 +24,19 @@ func main() {
 	defer logger.Sync() //nolint:errcheck
 
 	// Build in-cluster Kubernetes client.
+	// When running outside a cluster (e.g. docker compose) k8s is unavailable;
+	// degrade gracefully so the other services can still start cleanly.
 	cfg, err := rest.InClusterConfig()
 	if err != nil {
-		logger.Fatal("failed to get in-cluster config", zap.Error(err))
+		logger.Warn("kubernetes not available — running in no-op mode (expected outside a cluster)",
+			zap.Error(err),
+		)
+		// Block until shutdown signal; bot provisioning requires k8s.
+		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer cancel()
+		logger.Info("bot-fleet-manager idling (no kubernetes)")
+		<-ctx.Done()
+		return
 	}
 	k8sClient, err := kubernetes.NewForConfig(cfg)
 	if err != nil {

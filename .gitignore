@@ -1,6 +1,9 @@
 # Environment secrets
 .env
 
+# TLS certificates (generated locally — never commit private keys)
+certs/
+
 # Go build artifacts
 *.exe
 *.exe~

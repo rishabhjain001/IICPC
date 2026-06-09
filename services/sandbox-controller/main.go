@@ -33,7 +33,17 @@ func main() {
 
 	cfg, err := loadKubeConfig()
 	if err != nil {
-		log.Fatal("failed to load kubeconfig", zap.Error(err))
+		// When running outside a cluster (e.g. docker compose) k8s is
+		// unavailable.  Degrade gracefully — warn and idle.
+		log.Warn("kubernetes not available — running in no-op mode",
+			zap.Error(err),
+		)
+		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+		defer stop()
+		log.Info("sandbox-controller idling (no kubernetes)")
+		<-ctx.Done()
+		log.Info("sandbox-controller shutting down")
+		return
 	}
 
 	k8sClient, err := kubernetes.NewForConfig(cfg)

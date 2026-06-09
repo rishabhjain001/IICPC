@@ -62,7 +62,15 @@ func run() error {
 	// ------------------------------------------------------------ k8s client
 	k8sClient, err := newK8sClient(cfg.KubeConfig)
 	if err != nil {
-		return fmt.Errorf("create kubernetes client: %w", err)
+		// When running outside a cluster (e.g. docker compose) k8s is
+		// unavailable.  Degrade gracefully — warn and idle.
+		logger.Warn("kubernetes not available — running in no-op mode",
+			zap.Error(err),
+		)
+		logger.Info("build-pipeline idling (no kubernetes)")
+		<-ctx.Done()
+		logger.Info("build-pipeline stopped")
+		return nil
 	}
 	logger.Info("kubernetes client ready")
 

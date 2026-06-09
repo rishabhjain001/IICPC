@@ -171,12 +171,14 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgresql://dbhp:dbhp@timescaledb:5432/dbhp}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       ARTIFACT_REGISTRY_URL: ${ARTIFACT_REGISTRY_URL:-http://registry:5000}
-      TLS_CERT_FILE: ${TLS_CERT_FILE:-/certs/server.crt}
-      TLS_KEY_FILE: ${TLS_KEY_FILE:-/certs/server.key}
+      TLS_CERT_FILE: /certs/server.crt
+      TLS_KEY_FILE: /certs/server.key
       PORT: "8443"
       LOG_LEVEL: ${LOG_LEVEL:-info}
     ports:
       - "8443:8443"
+    volumes:
+      - ./certs:/certs:ro
     networks:
       - dbhp-internal
     depends_on:
@@ -324,6 +326,12 @@ services:
         condition: service_healthy
       timescaledb:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:8082/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     restart: unless-stopped
     logging:
       driver: json-file
@@ -340,15 +348,18 @@ services:
       dockerfile: Dockerfile
     container_name: dbhp-leaderboard-frontend
     environment:
-      LEADERBOARD_WS_URL: ${LEADERBOARD_WS_URL:-ws://leaderboard-service:8082/v1/ws/leaderboard}
-      LEADERBOARD_API_URL: ${LEADERBOARD_API_URL:-http://leaderboard-service:8082}
+      # These are baked into the SPA at build time and are resolved by the
+      # browser, not by Docker — so they must use the host-facing address.
+      LEADERBOARD_WS_URL: ${LEADERBOARD_WS_URL:-ws://localhost:8082/v1/ws/leaderboard}
+      LEADERBOARD_API_URL: ${LEADERBOARD_API_URL:-http://localhost:8082}
       PORT: "3000"
     ports:
       - "3000:3000"
     networks:
       - dbhp-internal
     depends_on:
-      - leaderboard-service
+      leaderboard-service:
+        condition: service_healthy
     restart: unless-stopped
     logging:
       driver: json-file

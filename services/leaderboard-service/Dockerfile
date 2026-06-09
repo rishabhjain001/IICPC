@@ -11,7 +11,7 @@ RUN GOWORK=off CGO_ENABLED=0 GOOS=linux go build -trimpath -o /leaderboard-servi
 
 FROM debian:bookworm-slim
 
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates wget && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /leaderboard-service /usr/local/bin/leaderboard-service
 

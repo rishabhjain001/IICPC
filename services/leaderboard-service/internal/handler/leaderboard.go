@@ -20,10 +20,19 @@ import (
 
 // LeaderboardEntry is a single ranked contestant entry in the REST response.
 type LeaderboardEntry struct {
-	Rank           uint32    `json:"rank"`
-	ContestantID   string    `json:"contestant_id"`
-	CompositeScore float64   `json:"composite_score"`
-	ComputedAt     time.Time `json:"computed_at"`
+	Rank             uint32    `json:"rank"`
+	ContestantID     string    `json:"contestant_id"`
+	ContestantHandle string    `json:"contestant_handle"`
+	CompositeScore   float64   `json:"composite_score"`
+	SpeedScore       float64   `json:"speed_score"`
+	StabilityScore   float64   `json:"stability_score"`
+	AccuracyScore    float64   `json:"accuracy_score"`
+	P99LatencyMs     float64   `json:"p99_latency_ms"`
+	MaxTPS           int64     `json:"max_tps"`
+	FillAccuracyPct  float64   `json:"fill_accuracy_pct"`
+	RunStatus        string    `json:"run_status"`
+	BenchmarkRunID   string    `json:"benchmark_run_id"`
+	ComputedAt       time.Time `json:"computed_at"`
 }
 
 // LeaderboardResponse is the paginated JSON envelope returned by
@@ -51,11 +60,23 @@ func NewLeaderboardHandler(rdb redis.Cmdable) *LeaderboardHandler {
 
 // ServeHTTP handles GET /v1/leaderboard?page=1&page_size=100.
 //
-// Fetches rankings from the leaderboard:current Redis sorted set using
-// ZREVRANGEBYSCORE. Returns a paginated JSON response with an ETag header
-// computed as the SHA-256 hash of the response body.
+// Fetches rankings from the leaderboard:current Redis sorted set.
+// Returns a paginated JSON response with an ETag header computed from
+// stable fields (rank + contestant_id + score), excluding ComputedAt so
+// the ETag is deterministic for identical data.
 // Falls back gracefully if Redis is unavailable.
 func (h *LeaderboardHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Allow browser SPA (leaderboard-frontend) to call this endpoint directly.
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, If-None-Match")
+
+	// Handle preflight.
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -66,7 +87,6 @@ func (h *LeaderboardHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	entries, total, err := h.fetchFromRedis(ctx, page, pageSize)
 	if err != nil {
-		// Fallback: return empty response with error flag.
 		// A production implementation would fall back to TimescaleDB here.
 		http.Error(w, "leaderboard unavailable", http.StatusServiceUnavailable)
 		return
@@ -79,6 +99,8 @@ func (h *LeaderboardHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		PageSize: pageSize,
 	}
 
+	// Marshal the body first — if this fails we can still send a clean 500
+	// before any headers have been written.
 	body, err := json.Marshal(resp)
 	if err != nil {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
@@ -94,14 +116,20 @@ func (h *LeaderboardHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	stable := make([]stableEntry, len(entries))
 	for i, e := range entries {
-		stable[i] = stableEntry{Rank: e.Rank, ContestantID: e.ContestantID, CompositeScore: e.CompositeScore}
+		stable[i] = stableEntry{
+			Rank:           e.Rank,
+			ContestantID:   e.ContestantID,
+			CompositeScore: e.CompositeScore,
+		}
 	}
 	stableBytes, _ := json.Marshal(stable)
 	sum := sha256.Sum256(stableBytes)
 	etag := fmt.Sprintf(`"%x"`, sum)
 
+	// All fallible operations are done — safe to write headers and body.
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("ETag", etag)
+	// WriteHeader is implicit in Write(200), but explicit here for clarity.
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(body)
 }
@@ -119,22 +147,39 @@ func (h *LeaderboardHandler) fetchFromRedis(ctx context.Context, page, pageSize 
 
 	// Zero-based offset for pagination.
 	offset := int64((page - 1) * pageSize)
-	limit := int64(pageSize)
+	stop := offset + int64(pageSize) - 1
 
 	// ZREVRANGE returns members sorted by score descending.
-	members, err := h.RDB.ZRevRangeWithScores(ctx, key, offset, offset+limit-1).Result()
+	members, err := h.RDB.ZRevRangeWithScores(ctx, key, offset, stop).Result()
 	if err != nil {
 		return nil, 0, fmt.Errorf("ZREVRANGE: %w", err)
 	}
 
-	now := time.Now().UTC()
+	// Always return a non-nil slice so JSON encodes as [] not null.
 	entries := make([]LeaderboardEntry, 0, len(members))
+	now := time.Now().UTC()
+
 	for i, m := range members {
+		// Safe type assertion — go-redis always stores string members, but
+		// guard against any future interface change to avoid a runtime panic.
+		handle, ok := m.Member.(string)
+		if !ok {
+			continue
+		}
+		// Compute rank as int64 to avoid uint32 overflow on large offsets,
+		// then clamp to uint32 max if somehow exceeded.
+		rankI64 := offset + int64(i) + 1
+		var rank uint32
+		if rankI64 > 0 && rankI64 <= int64(^uint32(0)) {
+			rank = uint32(rankI64)
+		}
 		entries = append(entries, LeaderboardEntry{
-			Rank:           uint32(offset) + uint32(i) + 1,
-			ContestantID:   m.Member.(string),
-			CompositeScore: m.Score,
-			ComputedAt:     now,
+			Rank:             rank,
+			ContestantID:     handle,
+			ContestantHandle: handle,
+			CompositeScore:   m.Score,
+			RunStatus:        "COMPLETE",
+			ComputedAt:       now,
 		})
 	}
 
