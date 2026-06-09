@@ -37,11 +37,13 @@ type LeaderboardEntry struct {
 
 // LeaderboardResponse is the paginated JSON envelope returned by
 // GET /v1/leaderboard.
+// computed_at is included so the frontend can track freshness.
 type LeaderboardResponse struct {
-	Entries  []LeaderboardEntry `json:"entries"`
-	Total    int64              `json:"total"`
-	Page     int                `json:"page"`
-	PageSize int                `json:"page_size"`
+	Entries    []LeaderboardEntry `json:"entries"`
+	Total      int64              `json:"total"`
+	Page       int                `json:"page"`
+	PageSize   int                `json:"page_size"`
+	ComputedAt time.Time          `json:"computed_at"`
 }
 
 // ---------------------------------------------------------------------------
@@ -60,10 +62,9 @@ func NewLeaderboardHandler(rdb redis.Cmdable) *LeaderboardHandler {
 
 // ServeHTTP handles GET /v1/leaderboard?page=1&page_size=100.
 //
-// Fetches rankings from the leaderboard:current Redis sorted set.
-// Returns a paginated JSON response with an ETag header computed from
-// stable fields (rank + contestant_id + score), excluding ComputedAt so
-// the ETag is deterministic for identical data.
+// Fetches rankings from the leaderboard:current Redis sorted set and enriches
+// each entry with per-contestant metric details stored in leaderboard:meta:<handle>.
+// Returns a paginated JSON response with an ETag header.
 // Falls back gracefully if Redis is unavailable.
 func (h *LeaderboardHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Allow browser SPA (leaderboard-frontend) to call this endpoint directly.
@@ -87,28 +88,27 @@ func (h *LeaderboardHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	entries, total, err := h.fetchFromRedis(ctx, page, pageSize)
 	if err != nil {
-		// A production implementation would fall back to TimescaleDB here.
 		http.Error(w, "leaderboard unavailable", http.StatusServiceUnavailable)
 		return
 	}
 
+	now := time.Now().UTC()
 	resp := LeaderboardResponse{
-		Entries:  entries,
-		Total:    total,
-		Page:     page,
-		PageSize: pageSize,
+		Entries:    entries,
+		Total:      total,
+		Page:       page,
+		PageSize:   pageSize,
+		ComputedAt: now,
 	}
 
-	// Marshal the body first — if this fails we can still send a clean 500
-	// before any headers have been written.
+	// Marshal the body first so failures are handled before any headers are written.
 	body, err := json.Marshal(resp)
 	if err != nil {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
-	// Compute ETag from stable fields only (rank + contestant_id + score),
-	// excluding ComputedAt so the ETag is deterministic for identical data.
+	// Compute ETag from stable fields (rank + handle + score), excluding timestamps.
 	type stableEntry struct {
 		Rank           uint32  `json:"rank"`
 		ContestantID   string  `json:"contestant_id"`
@@ -126,30 +126,25 @@ func (h *LeaderboardHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	sum := sha256.Sum256(stableBytes)
 	etag := fmt.Sprintf(`"%x"`, sum)
 
-	// All fallible operations are done — safe to write headers and body.
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("ETag", etag)
-	// WriteHeader is implicit in Write(200), but explicit here for clarity.
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(body)
 }
 
 // fetchFromRedis retrieves paginated leaderboard entries from the
-// leaderboard:current sorted set.
+// leaderboard:current sorted set, enriched with per-contestant metadata.
 func (h *LeaderboardHandler) fetchFromRedis(ctx context.Context, page, pageSize int) ([]LeaderboardEntry, int64, error) {
 	const key = "leaderboard:current"
 
-	// Total count.
 	total, err := h.RDB.ZCard(ctx, key).Result()
 	if err != nil {
 		return nil, 0, fmt.Errorf("ZCARD: %w", err)
 	}
 
-	// Zero-based offset for pagination.
 	offset := int64((page - 1) * pageSize)
 	stop := offset + int64(pageSize) - 1
 
-	// ZREVRANGE returns members sorted by score descending.
 	members, err := h.RDB.ZRevRangeWithScores(ctx, key, offset, stop).Result()
 	if err != nil {
 		return nil, 0, fmt.Errorf("ZREVRANGE: %w", err)
@@ -160,27 +155,59 @@ func (h *LeaderboardHandler) fetchFromRedis(ctx context.Context, page, pageSize 
 	now := time.Now().UTC()
 
 	for i, m := range members {
-		// Safe type assertion — go-redis always stores string members, but
-		// guard against any future interface change to avoid a runtime panic.
 		handle, ok := m.Member.(string)
 		if !ok {
 			continue
 		}
-		// Compute rank as int64 to avoid uint32 overflow on large offsets,
-		// then clamp to uint32 max if somehow exceeded.
+
+		// Compute rank safely (avoids uint32 overflow on large offsets).
 		rankI64 := offset + int64(i) + 1
 		var rank uint32
 		if rankI64 > 0 && rankI64 <= int64(^uint32(0)) {
 			rank = uint32(rankI64)
 		}
-		entries = append(entries, LeaderboardEntry{
+
+		entry := LeaderboardEntry{
 			Rank:             rank,
 			ContestantID:     handle,
 			ContestantHandle: handle,
 			CompositeScore:   m.Score,
 			RunStatus:        "COMPLETE",
 			ComputedAt:       now,
-		})
+		}
+
+		// Enrich with per-contestant metadata stored in leaderboard:meta:<handle>.
+		// This is a best-effort read — if the key is missing we still return the entry.
+		metaKey := "leaderboard:meta:" + handle
+		meta, metaErr := h.RDB.HGetAll(ctx, metaKey).Result()
+		if metaErr == nil && len(meta) > 0 {
+			if v, ok := meta["speed_score"]; ok {
+				entry.SpeedScore, _ = strconv.ParseFloat(v, 64)
+			}
+			if v, ok := meta["stability_score"]; ok {
+				entry.StabilityScore, _ = strconv.ParseFloat(v, 64)
+			}
+			if v, ok := meta["accuracy_score"]; ok {
+				entry.AccuracyScore, _ = strconv.ParseFloat(v, 64)
+			}
+			if v, ok := meta["p99_latency_ms"]; ok {
+				entry.P99LatencyMs, _ = strconv.ParseFloat(v, 64)
+			}
+			if v, ok := meta["max_tps"]; ok {
+				entry.MaxTPS, _ = strconv.ParseInt(v, 10, 64)
+			}
+			if v, ok := meta["fill_accuracy_pct"]; ok {
+				entry.FillAccuracyPct, _ = strconv.ParseFloat(v, 64)
+			}
+			if v, ok := meta["run_status"]; ok {
+				entry.RunStatus = v
+			}
+			if v, ok := meta["benchmark_run_id"]; ok {
+				entry.BenchmarkRunID = v
+			}
+		}
+
+		entries = append(entries, entry)
 	}
 
 	return entries, total, nil
