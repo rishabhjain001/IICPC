@@ -4,6 +4,9 @@
 # TLS certificates (generated locally — never commit private keys)
 certs/
 
+# Spec files — internal planning docs, not for public repo
+docs/specs/
+
 # Go build artifacts
 *.exe
 *.exe~
