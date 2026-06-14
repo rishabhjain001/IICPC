@@ -35,6 +35,13 @@ func (m *mockRedis) ZCard(ctx context.Context, key string) *redis.IntCmd {
 	return cmd
 }
 
+// HGetAll returns an empty map — meta enrichment is optional, tests don't need it
+func (m *mockRedis) HGetAll(ctx context.Context, key string) *redis.MapStringStringCmd {
+	cmd := redis.NewMapStringStringCmd(ctx)
+	cmd.SetVal(map[string]string{})
+	return cmd
+}
+
 func (m *mockRedis) ZRevRangeWithScores(ctx context.Context, key string, start, stop int64) *redis.ZSliceCmd {
 	cmd := redis.NewZSliceCmd(ctx)
 	if m.err != nil {
