@@ -71,14 +71,6 @@ Contestants keep their highest composite score across all runs.
 - Kafka/Redpanda — telemetry event bus between bots and ingester
 - Kubernetes — sandbox isolation (seccomp, AppArmor, cgroups), bot scheduling
 
-## running locally
-
-```bash
-cp .env.example .env
-docker compose up -d
-```
-
-Takes ~5 min on first run (building images). Once up, the leaderboard is at http://localhost:3000.
 
 To populate sample data without running a full benchmark:
 
