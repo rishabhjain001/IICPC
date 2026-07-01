@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>IICPC — Live Leaderboard</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#11111b;color:#cdd6f4;font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh}
+#root{max-width:1400px;margin:0 auto;padding:0 16px 32px}
+.app-header{display:flex;align-items:center;justify-content:space-between;padding:16px 0;border-bottom:1px solid #313244;margin-bottom:16px}
+.app-title{font-size:1.5rem;font-weight:700;color:#89b4fa}
+.app-subtitle{font-size:.875rem;color:#6c7086;margin-top:2px}
+.connection-status{display:flex;align-items:center;gap:6px;font-size:.8rem}
+.connection-dot{width:8px;height:8px;border-radius:50%;background:#a6e3a1;animation:blink 2s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.4}}
+.last-updated{font-size:.75rem;color:#6c7086;margin-top:4px}
+.section-label{font-size:.8rem;color:#6c7086;margin:16px 0 8px;text-transform:uppercase;letter-spacing:.08em}
+.lb-table-wrapper{overflow-x:auto;width:100%;border-radius:8px;border:1px solid #313244}
+.lb-table{border-collapse:collapse;width:100%;font-size:.875rem;background:#1e1e2e;color:#cdd6f4}
+.lb-table th,.lb-table td{padding:9px 14px;text-align:right;border-bottom:1px solid #313244;white-space:nowrap}
+.lb-table th:first-child,.lb-table td:first-child{text-align:center}
+.lb-table th:nth-child(2),.lb-table td:nth-child(2){text-align:left}
+.lb-table th:last-child,.lb-table td:last-child{text-align:center}
+.lb-table thead th{background:#181825;color:#89b4fa;font-weight:600;font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;position:sticky;top:0;z-index:1}
+.lb-table tbody tr:hover{background:#2a2a3e;cursor:pointer}
+.lb-table tbody tr.selected{background:#313244}
+.lb-table tbody tr.updated{animation:flash .6s ease-out}
+@keyframes flash{0%{background:#3d3250}100%{}}
+.rank-cell{font-weight:700;color:#f38ba8}
+.rank-cell.top1{color:#f9e2af}
+.rank-cell.top2{color:#cba6f7}
+.rank-cell.top3{color:#89dceb}
+.score-highlight{color:#a6e3a1;font-weight:600}
+.badge{display:inline-block;padding:2px 8px;border-radius:9999px;color:#fff;font-size:.72rem;font-weight:600;letter-spacing:.03em}
+.badge-complete{background:#22c55e}
+.badge-progress{background:#f59e0b}
+.badge-failed{background:#ef4444}
+.chart-box{background:#1e1e2e;border:1px solid #313244;border-radius:8px;padding:16px;margin-top:8px}
+.chart-title{font-size:.85rem;color:#89b4fa;margin-bottom:12px;font-weight:600}
+.chart-row{display:flex;gap:24px;flex-wrap:wrap;margin-bottom:10px}
+.stat-card{background:#181825;border-radius:6px;padding:10px 16px;min-width:120px}
+.stat-label{font-size:.7rem;color:#6c7086;text-transform:uppercase;letter-spacing:.06em}
+.stat-value{font-size:1.15rem;font-weight:700;color:#cdd6f4;margin-top:2px}
+.bar-container{margin-top:8px}
+.bar-label{font-size:.72rem;color:#6c7086;margin-bottom:3px}
+.bar-track{background:#313244;border-radius:4px;height:8px;width:100%;overflow:hidden}
+.bar-fill{height:100%;border-radius:4px;transition:width .5s ease}
+</style>
+</head>
+<body>
+<div id="root">
+  <header class="app-header">
+    <div>
+      <div class="app-title">IICPC — Live Leaderboard</div>
+      <div class="app-subtitle">Distributed Benchmarking Platform · IICPC Summer Hackathon 2026</div>
+      <div class="last-updated" id="last-updated">Initialising…</div>
+    </div>
+    <div class="connection-status">
+      <span class="connection-dot"></span>
+      <span>Live</span>
+    </div>
+  </header>
+  <p class="section-label">Standings — click a row to view analytics</p>
+  <div class="lb-table-wrapper">
+    <table class="lb-table" id="lb-table">
+      <thead>
+        <tr>
+          <th>#</th><th>Handle</th><th>Composite</th><th>Speed</th>
+          <th>Stability</th><th>Accuracy</th><th>p99 (ms)</th>
+          <th>Max TPS</th><th>Fill%</th><th>Status</th>
+        </tr>
+      </thead>
+      <tbody id="lb-body"></tbody>
+    </table>
+  </div>
+  <div id="chart-section" style="display:none">
+    <p class="section-label" id="chart-label"></p>
+    <div class="chart-box">
+      <div class="chart-title">Performance Metrics</div>
+      <div class="chart-row" id="stat-cards"></div>
+      <div class="bar-container">
+        <div class="bar-label">Speed Score</div>
+        <div class="bar-track"><div class="bar-fill" id="bar-speed" style="background:#89b4fa"></div></div>
+      </div>
+      <div class="bar-container" style="margin-top:6px">
+        <div class="bar-label">Stability Score</div>
+        <div class="bar-track"><div class="bar-fill" id="bar-stability" style="background:#a6e3a1"></div></div>
+      </div>
+      <div class="bar-container" style="margin-top:6px">
+        <div class="bar-label">Accuracy Score</div>
+        <div class="bar-track"><div class="bar-fill" id="bar-accuracy" style="background:#f9e2af"></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+const CONTESTANTS=[
+  {handle:"quantum_hft",   p99:0.9,  tps:980000, acc:0.993, status:"COMPLETE"},
+  {handle:"team-alpha",    p99:1.2,  tps:920000, acc:0.981, status:"COMPLETE"},
+  {handle:"dark_pool_x",   p99:1.5,  tps:910000, acc:0.976, status:"COMPLETE"},
+  {handle:"rustacean",     p99:1.8,  tps:800000, acc:0.967, status:"COMPLETE"},
+  {handle:"speedrunner99", p99:2.1,  tps:870000, acc:0.944, status:"COMPLETE"},
+  {handle:"fx_samurai",    p99:2.8,  tps:830000, acc:0.955, status:"COMPLETE"},
+  {handle:"gopher_hft",    p99:3.4,  tps:750000, acc:0.921, status:"COMPLETE"},
+  {handle:"high_freq_hz",  p99:4.1,  tps:710000, acc:0.918, status:"IN_PROGRESS"},
+  {handle:"matchme",       p99:4.7,  tps:690000, acc:0.898, status:"COMPLETE"},
+  {handle:"delta_hedge",   p99:3.9,  tps:720000, acc:0.932, status:"COMPLETE"},
+  {handle:"team-beta",     p99:5.5,  tps:620000, acc:0.901, status:"IN_PROGRESS"},
+  {handle:"orderflow",     p99:6.2,  tps:610000, acc:0.875, status:"COMPLETE"},
+  {handle:"market_nerd",   p99:6.8,  tps:590000, acc:0.893, status:"IN_PROGRESS"},
+  {handle:"arb_engine",    p99:7.1,  tps:580000, acc:0.887, status:"COMPLETE"},
+  {handle:"latency_lab",   p99:8.9,  tps:540000, acc:0.852, status:"COMPLETE"},
+  {handle:"algo_wizard",   p99:9.1,  tps:510000, acc:0.862, status:"IN_PROGRESS"},
+  {handle:"ByteTrader",    p99:12.3, tps:480000, acc:0.831, status:"COMPLETE"},
+  {handle:"nullptr_exc",   p99:18.7, tps:390000, acc:0.794, status:"COMPLETE"},
+  {handle:"rho_trader",    p99:14.5, tps:440000, acc:0.812, status:"COMPLETE"},
+  {handle:"segfault_co",   p99:25.0, tps:310000, acc:0.741, status:"COMPLETE"},
+  {handle:"vega_systems",  p99:32.0, tps:250000, acc:0.703, status:"COMPLETE"},
+  {handle:"theta_gang",    p99:45.0, tps:180000, acc:0.661, status:"COMPLETE"},
+];
+function clamp(v,lo,hi){return Math.max(lo,Math.min(hi,v))}
+function speedScore(p99){return clamp((100-p99)/99,0,1)}
+function stabilityScore(tps){return clamp(tps/1000000,0,1)}
+function composite(p99,tps,acc){return 0.35*speedScore(p99)+0.35*stabilityScore(tps)+0.30*acc}
+function fmtTPS(n){return n>=1e6?(n/1e6).toFixed(2)+"M":n>=1e3?(n/1e3).toFixed(1)+"K":n}
+function fmtPct(n){return(n*100).toFixed(1)+"%"}
+let contestants=CONTESTANTS.map(c=>({...c,speed:speedScore(c.p99),stability:stabilityScore(c.tps),score:composite(c.p99,c.tps,c.acc)})).sort((a,b)=>b.score-a.score).map((c,i)=>({...c,rank:i+1}));
+let selected=null,updatedHandles=new Set();
+function badgeClass(s){if(s==="COMPLETE")return"badge badge-complete";if(["IN_PROGRESS","RUNNING","BUILDING","DEPLOYING","QUEUED","COLLECTING","SCORING"].includes(s))return"badge badge-progress";return"badge badge-failed"}
+function renderTable(){
+  const tbody=document.getElementById("lb-body");
+  tbody.innerHTML=contestants.map(c=>{
+    const rc=c.rank===1?"top1":c.rank===2?"top2":c.rank===3?"top3":"";
+    const sel=c.handle===selected?" selected":"";
+    const upd=updatedHandles.has(c.handle)?" updated":"";
+    return`<tr class="${sel}${upd}" onclick="selectContestant('${c.handle}')"><td class="rank-cell ${rc}">${c.rank}</td><td>${c.handle}</td><td class="score-highlight">${c.score.toFixed(4)}</td><td>${c.speed.toFixed(4)}</td><td>${c.stability.toFixed(4)}</td><td>${c.acc.toFixed(4)}</td><td>${c.p99.toFixed(1)}</td><td>${fmtTPS(c.tps)}</td><td>${fmtPct(c.acc)}</td><td><span class="${badgeClass(c.status)}">${c.status}</span></td></tr>`;
+  }).join("");
+  updatedHandles.clear();
+  document.getElementById("last-updated").textContent="Last updated: "+new Date().toLocaleTimeString();
+}
+function selectContestant(handle){
+  if(selected===handle){selected=null;document.getElementById("chart-section").style.display="none";renderTable();return}
+  selected=handle;renderTable();
+  const c=contestants.find(x=>x.handle===handle);if(!c)return;
+  document.getElementById("chart-label").textContent=handle+" — Analytics";
+  document.getElementById("chart-section").style.display="block";
+  document.getElementById("bar-speed").style.width=(c.speed*100).toFixed(1)+"%";
+  document.getElementById("bar-stability").style.width=(c.stability*100).toFixed(1)+"%";
+  document.getElementById("bar-accuracy").style.width=(c.acc*100).toFixed(1)+"%";
+  document.getElementById("stat-cards").innerHTML=`<div class="stat-card"><div class="stat-label">Composite Score</div><div class="stat-value" style="color:#a6e3a1">${c.score.toFixed(4)}</div></div><div class="stat-card"><div class="stat-label">p99 Latency</div><div class="stat-value">${c.p99.toFixed(1)} ms</div></div><div class="stat-card"><div class="stat-label">Max TPS</div><div class="stat-value">${fmtTPS(c.tps)}</div></div><div class="stat-card"><div class="stat-label">Fill Accuracy</div><div class="stat-value">${fmtPct(c.acc)}</div></div><div class="stat-card"><div class="stat-label">Status</div><div class="stat-value"><span class="${badgeClass(c.status)}" style="font-size:.9rem">${c.status}</span></div></div><div class="stat-card"><div class="stat-label">Rank</div><div class="stat-value">#${c.rank}</div></div>`;
+}
+function simulateLiveUpdate(){
+  const live=contestants.filter(c=>c.status==="IN_PROGRESS");
+  if(!live.length)return;
+  const c=live[Math.floor(Math.random()*live.length)];
+  c.p99=Math.max(0.5,c.p99+(Math.random()-0.55)*0.3);
+  c.tps=Math.min(1000000,c.tps+Math.floor((Math.random()-0.4)*5000));
+  c.acc=Math.min(1,c.acc+(Math.random()-0.48)*0.002);
+  c.speed=speedScore(c.p99);c.stability=stabilityScore(c.tps);c.score=composite(c.p99,c.tps,c.acc);
+  contestants.sort((a,b)=>b.score-a.score);contestants.forEach((x,i)=>x.rank=i+1);
+  updatedHandles.add(c.handle);renderTable();
+  if(selected===c.handle)selectContestant(c.handle);
+}
+renderTable();
+setInterval(simulateLiveUpdate,3000);
+</script>
+</body>
+</html>
